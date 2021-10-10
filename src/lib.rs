@@ -29,6 +29,7 @@ const HEADER_SIZE: usize = 4;
 impl<Flash: FlashTrait, const page_size: usize> FlashStore<Flash, page_size> {
 	pub fn new(flash: Flash) -> FlashStore<Flash, page_size> {
 		assert!(Flash::word_size != 3, "A word size of 3 is unsupported");
+		assert!(Flash::page_size == page_size);
 		FlashStore { flash }
 	}
 	
@@ -302,7 +303,7 @@ mod tests {
 	fn stress_test<const MAX_FILE_NUMBER: u64, const MAX_FILE_SIZE: usize>() {
 		struct MyFlash {
 			data: [u8; 1024],
-			erase_count: [usize; 4]
+			erase_count: [usize; 8]
 		}
 
 		impl MyFlash {
@@ -315,7 +316,7 @@ mod tests {
 
 		impl FlashTrait for &mut MyFlash {
 			const size: usize = 1024;
-			const page_size: usize = 256;
+			const page_size: usize = 128;
 			const word_size: usize = 4;
 			const erased_value: u8 = 0xFF;
 			type Error = ();
@@ -338,9 +339,9 @@ mod tests {
 			}
 		}
 
-		let mut flash = MyFlash { data: [0xFF; 1024], erase_count: [0; 4] };
+		let mut flash = MyFlash { data: [0xFF; 1024], erase_count: [0; 8] };
 		let mut files : Vec<Option<Vec<u8>>> = std::iter::repeat(None).take(255).collect::<Vec<_>>();
-		let mut store = FlashStore::<_, 256>::new(&mut flash);
+		let mut store = FlashStore::<_, 128>::new(&mut flash);
 		let mut buf = [0; 1024];
 
 		let mut used = 0;
