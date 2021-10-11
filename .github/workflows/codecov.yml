@@ -1,0 +1,33 @@
+name: test coverage
+
+env:
+  CARGO_TERM_COLOR: always
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    name: Test Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          components: llvm-tools-preview
+          toolchain: 1.55.0
+          override: true
+      - uses: actions-rs/install@v0.1
+        with:
+          crate: grcov
+          version: 0.6.1
+          use-tool-cache: true
+      - run: cargo build
+        env:
+          RUSTFLAGS: "-Zinstrument-coverage"
+      - run: cargo test
+        env:
+          RUSTFLAGS: "-Zinstrument-coverage"
+      - run: grcov . --binary-path ./target/debug -s . -t lcov --branch --excl-start GRCOV_EXCL_START --excl-stop GRCOV_EXCL_STOP --excl-line GRCOV_EXCL_LINE --ignore-not-existing -o lcov.info
+      - run: bash <(curl -s https://codecov.io/bash) -f lcov.info
+
