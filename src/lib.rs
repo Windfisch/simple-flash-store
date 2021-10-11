@@ -15,6 +15,8 @@
 // DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
+#![no_std]
+
 #[cfg(test)]
 extern crate std;
 
@@ -209,7 +211,6 @@ impl<Flash: FlashTrait, const PAGE_SIZE: usize> FlashStore<Flash, PAGE_SIZE> {
 	}
 
 	fn compact_flash_except(&mut self, except_file_number: u8) -> Result<usize, FlashStoreError> {
-		println!("compacting the flash except for file {}", except_file_number);
 		use core::convert::TryInto;
 		let mut page_buffer = [0u8; PAGE_SIZE];
 
@@ -268,7 +269,6 @@ impl<Flash: FlashTrait, const PAGE_SIZE: usize> FlashStore<Flash, PAGE_SIZE> {
 		let mut end_of_store = self.end_of_store()?;
 
 		if end_of_store + HEADER_SIZE + buffer.len() > Flash::SIZE {
-			println!("used: {}", self.used_space_except(file_number)?);
 			if HEADER_SIZE + buffer.len() > Flash::SIZE - self.used_space_except(file_number)? {
 				return Err(FlashStoreError::NoSpaceLeft);
 			}
@@ -309,6 +309,7 @@ mod tests {
 	use super::FlashStore;
 	use super::FlashStoreError;
 	use super::FlashAccessError;
+	use super::std::vec::Vec;
 
 	pub struct XorShift {
 		state: u64
@@ -524,8 +525,6 @@ mod tests {
 					_ => {panic!()}
 				}
 			}
-
-			println!("Writing {} bytes (plus header) into file {}, with {} bytes already used", len, file_number, used);
 
 			let prev_entry_size = if let Some(ref f) = files[file_number as usize] {
 				(f.len() + 4 + granularity - 1) / granularity * granularity
