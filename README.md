@@ -11,6 +11,7 @@ The basic concept revolves around "files" which are identified only by a number 
 and 254, that can contain any amount of data bytes, regardless of your flash page size.
 
 Advantages:
+
 	- Low overhead (only 4 bytes or your flash's word size, whichever is larger).
 	- Perfect wear leveling: All pages have the same erase count at any time.
 	- Small code size.
@@ -19,6 +20,7 @@ Advantages:
 	- Well-suited for small flash memories.
 
 Disadvantages:
+
 	- No data safety during write operations: A power loss during writing can make it necessary
 	  to reformat the memory, losing all data.
 	- Locating a file is slow (requires reading once over the whole flash).
