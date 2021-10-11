@@ -2,6 +2,7 @@ simple-flash-store
 ==================
 
 [![build](https://github.com/Windfisch/simple-flash-store/actions/workflows/build.yml/badge.svg)](https://github.com/Windfisch/simple-flash-store/actions/workflows/build.yml)
+[![codecov](https://codecov.io/gh/Windfisch/simple-flash-store/branch/master/graph/badge.svg?token=TE7SRFIYYJ)](https://codecov.io/gh/Windfisch/simple-flash-store)
 
 This crate is a very simple library allowing you to store data in your microcontroller's
 flash memory without wearing it out too quickly.
