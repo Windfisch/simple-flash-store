@@ -1,0 +1,29 @@
+name: build
+
+env:
+  CARGO_TERM_COLOR: always
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    name: Build and test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust:
+          - stable
+          - 1.55.0
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: ${{ matrix.rust }}
+          override: true
+      - name: Compile
+        run: cargo build
+      - name: Test
+        run: cargo test
+
+
