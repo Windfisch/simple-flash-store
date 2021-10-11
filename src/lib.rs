@@ -19,32 +19,32 @@
 extern crate std;
 
 pub trait FlashTrait {
-	/// The flash size in bytes. Must be a multiple of `page_size`.
-	const size: usize;
+	/// The flash size in bytes. Must be a multiple of `PAGE_SIZE`.
+	const SIZE: usize;
 
 	/// The granularity in bytes with which pages can be erased
-	const page_size: usize;
+	const PAGE_SIZE: usize;
 
 	/// The granularity in bytes with which data can be written. A value of 3 is unsupported.
-	const word_size: usize;
+	const WORD_SIZE: usize;
 
 	/// Value of the first byte of each erased word. usually 0xFF
-	const erased_value: u8;
+	const ERASED_VALUE: u8;
 
 	type Error;
 
-	/// Erases the page starting at `address`. `address` must be a multiple of `page_size`
+	/// Erases the page starting at `address`. `address` must be a multiple of `PAGE_SIZE`
 	fn erase_page(&mut self, address: usize) -> Result<(), Self::Error>;
 
-	/// Writes `data` to `address`. `address` must be a multiple of `word_size`.
-	/// If `data.len()` is not a multiple of `word_size`, undefined padding is added.
+	/// Writes `data` to `address`. `address` must be a multiple of `WORD_SIZE`.
+	/// If `data.len()` is not a multiple of `WORD_SIZE`, undefined padding is added.
 	fn write(&mut self, address: usize, data: &[u8]) -> Result<(), Self::Error>;
 
-	/// Reads `data.len()` bytes from `address`. neither `address` nor `data.len()` need to be multiples of `word_size`.
+	/// Reads `data.len()` bytes from `address`. neither `address` nor `data.len()` need to be multiples of `WORD_SIZE`.
 	fn read(&mut self, address: usize, data: &mut [u8]) -> Result<(), Self::Error>;
 }
 
-pub struct FlashStore<Flash: FlashTrait, const page_size: usize> {
+pub struct FlashStore<Flash: FlashTrait, const PAGE_SIZE: usize> {
 	flash: Flash
 }
 
@@ -66,15 +66,15 @@ enum FindResult {
 
 const HEADER_SIZE: usize = 4;
 
-impl<Flash: FlashTrait, const page_size: usize> FlashStore<Flash, page_size> {
-	pub fn new(flash: Flash) -> FlashStore<Flash, page_size> {
-		assert!(Flash::word_size != 3, "A word size of 3 is unsupported");
-		assert!(Flash::page_size == page_size);
+impl<Flash: FlashTrait, const PAGE_SIZE: usize> FlashStore<Flash, PAGE_SIZE> {
+	pub fn new(flash: Flash) -> FlashStore<Flash, PAGE_SIZE> {
+		assert!(Flash::WORD_SIZE != 3, "A word size of 3 is unsupported");
+		assert!(Flash::PAGE_SIZE == PAGE_SIZE);
 		FlashStore { flash }
 	}
 	
 	fn parse_header(header: [u8; 4]) -> (u8, usize) {
-		let number = (!header[0]) ^ Flash::erased_value;
+		let number = (!header[0]) ^ Flash::ERASED_VALUE;
 		let size = u32::from_le_bytes([header[1], header[2], header[3], 0]);
 		(number, size as usize)
 	}
@@ -82,12 +82,12 @@ impl<Flash: FlashTrait, const page_size: usize> FlashStore<Flash, page_size> {
 	fn make_header(number: u8, size: usize) -> [u8; 4] {
 		assert!(size <= 0xFFFFFF);
 		let s = (size as u32).to_le_bytes();
-		[(!number) ^ Flash::erased_value, s[0], s[1], s[2]]
+		[(!number) ^ Flash::ERASED_VALUE, s[0], s[1], s[2]]
 	}
 
 
 	fn round(offset: usize) -> usize {
-		let word_size = Flash::word_size.max(HEADER_SIZE);
+		let word_size = Flash::WORD_SIZE.max(HEADER_SIZE);
 		((offset - 1) / word_size + 1) * word_size
 	}
 
@@ -104,7 +104,7 @@ impl<Flash: FlashTrait, const page_size: usize> FlashStore<Flash, page_size> {
 		let mut position = 0;
 		let mut found = None;
 
-		while position < Flash::size {
+		while position < Flash::SIZE {
 			let (number, size) = self.read_header(position)?;
 
 			if number == 0xFF {
@@ -115,7 +115,7 @@ impl<Flash: FlashTrait, const page_size: usize> FlashStore<Flash, page_size> {
 				found = Some((position, size));
 			}
 
-			if position + HEADER_SIZE + size > Flash::size {
+			if position + HEADER_SIZE + size > Flash::SIZE {
 				// the file exceeds the flash size
 				return Err(CorruptData);
 			}
@@ -157,7 +157,7 @@ impl<Flash: FlashTrait, const page_size: usize> FlashStore<Flash, page_size> {
 		let mut sizes = [0; 255];
 
 		let mut position = 0;
-		while position < Flash::size {
+		while position < Flash::SIZE {
 			let (number, size) = self.read_header(position)?;
 
 			if number == 0xFF {
@@ -165,7 +165,7 @@ impl<Flash: FlashTrait, const page_size: usize> FlashStore<Flash, page_size> {
 				break;
 			}
 
-			if position + HEADER_SIZE + size > Flash::size {
+			if position + HEADER_SIZE + size > Flash::SIZE {
 				// the file exceeds the flash size
 				return Err(FlashStoreError::CorruptData);
 			}
@@ -183,7 +183,7 @@ impl<Flash: FlashTrait, const page_size: usize> FlashStore<Flash, page_size> {
 		let mut positions = [usize::MAX; 255];
 
 		let mut position = 0;
-		while position < Flash::size {
+		while position < Flash::SIZE {
 			let (number, size) = self.read_header(position)?;
 
 			if number == 0xFF {
@@ -191,7 +191,7 @@ impl<Flash: FlashTrait, const page_size: usize> FlashStore<Flash, page_size> {
 				break;
 			}
 
-			if position + HEADER_SIZE + size > Flash::size {
+			if position + HEADER_SIZE + size > Flash::SIZE {
 				// the file exceeds the flash size
 				return Err(FlashStoreError::CorruptData);
 			}
@@ -206,7 +206,7 @@ impl<Flash: FlashTrait, const page_size: usize> FlashStore<Flash, page_size> {
 	fn compact_flash_except(&mut self, except_file_number: u8) -> Result<usize, FlashStoreError> {
 		println!("compacting the flash except for file {}", except_file_number);
 		use core::convert::TryInto;
-		let mut page_buffer = [0u8; page_size];
+		let mut page_buffer = [0u8; PAGE_SIZE];
 
 		let mut read_pointer = 0;
 		let mut write_pointer = 0;
@@ -214,18 +214,18 @@ impl<Flash: FlashTrait, const page_size: usize> FlashStore<Flash, page_size> {
 
 		let file_index = self.generate_file_index()?;
 
-		for page in (0..Flash::size).step_by(Flash::page_size) {
+		for page in (0..Flash::SIZE).step_by(Flash::PAGE_SIZE) {
 			self.flash.read(page, &mut page_buffer);
 			self.flash.erase_page(page);
 
 			if remaining_bytes_to_copy > 0 {
-				let copy_from_this_page = remaining_bytes_to_copy.min(Flash::page_size);
+				let copy_from_this_page = remaining_bytes_to_copy.min(Flash::PAGE_SIZE);
 				self.flash.write(write_pointer, &page_buffer[0..copy_from_this_page]);
 				write_pointer += copy_from_this_page;
 				remaining_bytes_to_copy -= copy_from_this_page;
 			}
 
-			while read_pointer < page + Flash::page_size {
+			while read_pointer < page + Flash::PAGE_SIZE {
 				assert!(remaining_bytes_to_copy == 0);
 				let read_pointer_in_page = read_pointer - page;
 				let remaining_page = &page_buffer[read_pointer_in_page..];
@@ -233,7 +233,7 @@ impl<Flash: FlashTrait, const page_size: usize> FlashStore<Flash, page_size> {
 				let (file_number, file_size) = Self::parse_header(remaining_page[0..HEADER_SIZE].try_into().unwrap());
 
 				if file_number == 0xFF {
-					read_pointer = Flash::size;
+					read_pointer = Flash::SIZE;
 					break;
 				}
 
@@ -262,27 +262,27 @@ impl<Flash: FlashTrait, const page_size: usize> FlashStore<Flash, page_size> {
 		
 		let mut end_of_store = self.end_of_store()?;
 
-		if end_of_store + HEADER_SIZE + buffer.len() > Flash::size {
+		if end_of_store + HEADER_SIZE + buffer.len() > Flash::SIZE {
 			println!("used: {}", self.used_space_except(file_number)?);
-			if HEADER_SIZE + buffer.len() > Flash::size - self.used_space_except(file_number)? {
+			if HEADER_SIZE + buffer.len() > Flash::SIZE - self.used_space_except(file_number)? {
 				return Err(FlashStoreError::NoSpaceLeft);
 			}
 			end_of_store = self.compact_flash_except(file_number)?;
 		}
 
 		let header = Self::make_header(file_number, buffer.len());
-		if Flash::word_size > HEADER_SIZE {
+		if Flash::WORD_SIZE > HEADER_SIZE {
 			// Let's just assume that no flash has a greater word size than 32.
 			// This is a limitation of Rust currently, this array should have a size of
-			// Flash::word_size instead. FIXME
+			// Flash::WORD_SIZE instead. FIXME
 			let mut temp = [0u8; 32];
-			let word_buffer = &mut temp[0..Flash::word_size];
+			let word_buffer = &mut temp[0..Flash::WORD_SIZE];
 
 			word_buffer[0..HEADER_SIZE].copy_from_slice(&header);
-			if Flash::word_size < buffer.len() + HEADER_SIZE {
-				word_buffer[HEADER_SIZE..].copy_from_slice(&buffer[0..(Flash::word_size-HEADER_SIZE)]);
+			if Flash::WORD_SIZE < buffer.len() + HEADER_SIZE {
+				word_buffer[HEADER_SIZE..].copy_from_slice(&buffer[0..(Flash::WORD_SIZE-HEADER_SIZE)]);
 				self.flash.write(end_of_store, &word_buffer);
-				self.flash.write(end_of_store + Flash::word_size, &buffer[(Flash::word_size-HEADER_SIZE)..]);
+				self.flash.write(end_of_store + Flash::WORD_SIZE, &buffer[(Flash::WORD_SIZE-HEADER_SIZE)..]);
 			}
 			else {
 				word_buffer[HEADER_SIZE..(HEADER_SIZE + buffer.len())].copy_from_slice(buffer);
@@ -298,6 +298,7 @@ impl<Flash: FlashTrait, const page_size: usize> FlashStore<Flash, page_size> {
 	}
 }
 
+#[cfg(test)]
 mod tests {
 	use super::FlashTrait;
 	use super::FlashStore;
@@ -353,16 +354,16 @@ mod tests {
 			}
 
 			impl FlashTrait for &mut $name {
-				const size: usize = $size;
-				const page_size: usize = $page_size;
-				const word_size: usize = $word_size;
-				const erased_value: u8 = $erased_value;
+				const SIZE: usize = $size;
+				const PAGE_SIZE: usize = $page_size;
+				const WORD_SIZE: usize = $word_size;
+				const ERASED_VALUE: u8 = $erased_value;
 				type Error = ();
 
 				fn erase_page(&mut self, page: usize) -> Result<(), ()> {
-					assert!(page % Self::page_size == 0);
-					self.erase_count[page / Self::page_size] += 1;
-					self.data[page..(page+Self::page_size)].copy_from_slice(&[Self::erased_value; Self::page_size]);
+					assert!(page % Self::PAGE_SIZE == 0);
+					self.erase_count[page / Self::PAGE_SIZE] += 1;
+					self.data[page..(page+Self::PAGE_SIZE)].copy_from_slice(&[Self::ERASED_VALUE; Self::PAGE_SIZE]);
 					Ok(())
 				}
 
@@ -371,7 +372,7 @@ mod tests {
 					Ok(())
 				}
 				fn write(&mut self, address: usize, data: &[u8]) -> Result<(), ()> {
-					assert!(address % Self::word_size == 0);
+					assert!(address % Self::WORD_SIZE == 0);
 					self.data[address..(address+data.len())].copy_from_slice(data);
 					Ok(())
 				}
@@ -485,7 +486,7 @@ mod tests {
 		let mut buf = [0; 1024];
 
 		let mut used = 0;
-		let granularity = <&mut MyFlash>::word_size.max(4);
+		let granularity = <&mut MyFlash>::WORD_SIZE.max(4);
 
 		for i in rand_iter(42).take(3000) {
 			// check
