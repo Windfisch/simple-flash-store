@@ -15,7 +15,7 @@ jobs:
         with:
           profile: minimal
           components: llvm-tools-preview
-          toolchain: 1.55.0
+          toolchain: nightly-2021-10-11
           override: true
       - uses: actions-rs/install@v0.1
         with:
