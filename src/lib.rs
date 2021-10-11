@@ -256,9 +256,15 @@ impl<Flash: FlashTrait, const page_size: usize> FlashStore<Flash, page_size> {
 			let word_buffer = &mut temp[0..Flash::word_size];
 
 			word_buffer[0..HEADER_SIZE].copy_from_slice(&header);
-			word_buffer[HEADER_SIZE..].copy_from_slice(&buffer[0..(Flash::word_size-HEADER_SIZE)]);
-			self.flash.write(end_of_store, &word_buffer);
-			self.flash.write(end_of_store + Flash::word_size, &buffer[(Flash::word_size-HEADER_SIZE)..]);
+			if Flash::word_size < buffer.len() + HEADER_SIZE {
+				word_buffer[HEADER_SIZE..].copy_from_slice(&buffer[0..(Flash::word_size-HEADER_SIZE)]);
+				self.flash.write(end_of_store, &word_buffer);
+				self.flash.write(end_of_store + Flash::word_size, &buffer[(Flash::word_size-HEADER_SIZE)..]);
+			}
+			else {
+				word_buffer[HEADER_SIZE..(HEADER_SIZE + buffer.len())].copy_from_slice(buffer);
+				self.flash.write(end_of_store, &word_buffer);
+			}
 		}
 		else {
 			self.flash.write(end_of_store, &header);
@@ -296,73 +302,167 @@ mod tests {
 		return iter;
 	}
 
-
-	#[test]
-	fn stress_test_congestion() {
-		stress_test::<255, 300>();
+	trait FlashTraitExt {
+		fn erase_count(&self) -> usize;
+		fn new() -> Self;
 	}
 
-	#[test]
-	fn stress_test_lots_of_small_files() {
-		stress_test::<100, 4>();
-	}
+	macro_rules! flash_impl {
+		($name:ident, $size: literal, $page_size: literal, $word_size: literal, $erased_value: literal) => {
+			struct $name {
+				data: [u8; $size],
+				erase_count: [usize; $size / $page_size]
+			}
 
-	#[test]
-	fn stress_test_lots_of_overwritten_files() {
-		stress_test::<5, 100>();
-	}
+			impl FlashTraitExt for $name {
+				fn erase_count(&self) -> usize {
+					let val = self.erase_count[0];
+					assert!(self.erase_count.iter().all(|x| *x == val));
+					return val;
+				}
+				
+				fn new() -> Self {
+					$name {
+						data: [$erased_value; $size],
+						erase_count: [0; $size / $page_size]
+					}
+				}
+			}
 
-	#[test]
-	fn stress_test_multipage() {
-		stress_test::<3, 500>();
-	}
+			impl FlashTrait for &mut $name {
+				const size: usize = $size;
+				const page_size: usize = $page_size;
+				const word_size: usize = $word_size;
+				const erased_value: u8 = $erased_value;
+				type Error = ();
 
-	fn stress_test<const MAX_FILE_NUMBER: u64, const MAX_FILE_SIZE: usize>() {
-		struct MyFlash {
-			data: [u8; 1024],
-			erase_count: [usize; 8]
-		}
+				fn erase_page(&mut self, page: usize) -> Result<(), ()> {
+					assert!(page % Self::page_size == 0);
+					self.erase_count[page / Self::page_size] += 1;
+					self.data[page..(page+Self::page_size)].copy_from_slice(&[Self::erased_value; Self::page_size]);
+					Ok(())
+				}
 
-		impl MyFlash {
-			pub fn erase_count(&self) -> usize {
-				let val = self.erase_count[0];
-				assert!(self.erase_count.iter().all(|x| *x == val));
-				return val;
+				fn read(&mut self, address:usize, data: &mut [u8]) -> Result<(), ()> {
+					data.copy_from_slice(&self.data[address..(address+data.len())]);
+					Ok(())
+				}
+				fn write(&mut self, address: usize, data: &[u8]) -> Result<(), ()> {
+					assert!(address % Self::word_size == 0);
+					self.data[address..(address+data.len())].copy_from_slice(data);
+					Ok(())
+				}
 			}
 		}
+	}
 
-		impl FlashTrait for &mut MyFlash {
-			const size: usize = 1024;
-			const page_size: usize = 128;
-			const word_size: usize = 4;
-			const erased_value: u8 = 0xFF;
-			type Error = ();
 
-			fn erase_page(&mut self, page: usize) -> Result<(), ()> {
-				assert!(page % Self::page_size == 0);
-				self.erase_count[page / Self::page_size] += 1;
-				self.data[page..(page+Self::page_size)].copy_from_slice(&[Self::erased_value; Self::page_size]);
-				Ok(())
-			}
+	#[test]
+	fn stress_test_congestion_1() {
+		flash_impl!(MyFlash, 1024, 128, 1, 0xFF);
+		stress_test::<MyFlash, 255, 300>();
+	}
 
-			fn read(&mut self, address:usize, data: &mut [u8]) -> Result<(), ()> {
-				data.copy_from_slice(&self.data[address..(address+data.len())]);
-				Ok(())
-			}
-			fn write(&mut self, address: usize, data: &[u8]) -> Result<(), ()> {
-				assert!(address % Self::word_size == 0);
-				self.data[address..(address+data.len())].copy_from_slice(data);
-				Ok(())
-			}
-		}
+	#[test]
+	fn stress_test_lots_of_small_files_1() {
+		flash_impl!(MyFlash, 1024, 128, 1, 0xFF);
+		stress_test::<MyFlash ,100, 4>();
+	}
 
-		let mut flash = MyFlash { data: [0xFF; 1024], erase_count: [0; 8] };
+	#[test]
+	fn stress_test_lots_of_overwritten_files_1() {
+		flash_impl!(MyFlash, 1024, 128, 1, 0xFF);
+		stress_test::<MyFlash, 5, 100>();
+	}
+
+	#[test]
+	fn stress_test_multipage_1() {
+		flash_impl!(MyFlash, 1024, 128, 1, 0xFF);
+		stress_test::<MyFlash, 3, 500>();
+	}
+
+	#[test]
+	fn stress_test_congestion_2() {
+		flash_impl!(MyFlash, 1024, 128, 2, 0xFF);
+		stress_test::<MyFlash, 255, 300>();
+	}
+
+	#[test]
+	fn stress_test_lots_of_small_files_2() {
+		flash_impl!(MyFlash, 1024, 128, 2, 0xFF);
+		stress_test::<MyFlash ,100, 4>();
+	}
+
+	#[test]
+	fn stress_test_lots_of_overwritten_files_2() {
+		flash_impl!(MyFlash, 1024, 128, 2, 0xFF);
+		stress_test::<MyFlash, 5, 100>();
+	}
+
+	#[test]
+	fn stress_test_multipage_2() {
+		flash_impl!(MyFlash, 1024, 128, 2, 0xFF);
+		stress_test::<MyFlash, 3, 500>();
+	}
+
+	#[test]
+	fn stress_test_congestion_4() {
+		flash_impl!(MyFlash, 1024, 128, 4, 0xFF);
+		stress_test::<MyFlash, 255, 300>();
+	}
+
+	#[test]
+	fn stress_test_lots_of_small_files_4() {
+		flash_impl!(MyFlash, 1024, 128, 4, 0xFF);
+		stress_test::<MyFlash ,100, 4>();
+	}
+
+	#[test]
+	fn stress_test_lots_of_overwritten_files_4() {
+		flash_impl!(MyFlash, 1024, 128, 4, 0xFF);
+		stress_test::<MyFlash, 5, 100>();
+	}
+
+	#[test]
+	fn stress_test_multipage_4() {
+		flash_impl!(MyFlash, 1024, 128, 4, 0xFF);
+		stress_test::<MyFlash, 3, 500>();
+	}
+
+	#[test]
+	fn stress_test_congestion_16() {
+		flash_impl!(MyFlash, 1024, 128, 16, 0xFF);
+		stress_test::<MyFlash, 255, 300>();
+	}
+
+	#[test]
+	fn stress_test_lots_of_small_files_16() {
+		flash_impl!(MyFlash, 1024, 128, 16, 0xFF);
+		stress_test::<MyFlash ,100, 4>();
+	}
+
+	#[test]
+	fn stress_test_lots_of_overwritten_files_16() {
+		flash_impl!(MyFlash, 1024, 128, 16, 0xFF);
+		stress_test::<MyFlash, 5, 100>();
+	}
+
+	#[test]
+	fn stress_test_multipage_16() {
+		flash_impl!(MyFlash, 1024, 128, 16, 0xFF);
+		stress_test::<MyFlash, 3, 500>();
+	}
+
+	fn stress_test<MyFlash, const MAX_FILE_NUMBER: u64, const MAX_FILE_SIZE: usize>()
+	where for<'a> &'a mut MyFlash : FlashTrait, MyFlash: FlashTraitExt
+	{
+		let mut flash = MyFlash::new();
 		let mut files : Vec<Option<Vec<u8>>> = std::iter::repeat(None).take(255).collect::<Vec<_>>();
 		let mut store = FlashStore::<_, 128>::new(&mut flash);
 		let mut buf = [0; 1024];
 
 		let mut used = 0;
-		let granularity = 4;
+		let granularity = <&mut MyFlash>::word_size.max(4);
 
 		for i in rand_iter(42).take(3000) {
 			// check
