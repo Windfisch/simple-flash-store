@@ -1,14 +1,14 @@
 // Copyright 2021 Florian Jung <flo@windfis.ch>
-// 
+//
 // Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 // associated documentation files (the "Software"), to deal in the Software without restriction,
 // including without limitation the rights to use, copy, modify, merge, publish, distribute,
 // sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
 // furnished to do so, subject to the following conditions:
-// 
+//
 // The above copyright notice and this permission notice shall be included in all copies or
 // substantial portions of the Software.
-// 
+//
 // THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
 // NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
 // NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
@@ -17,6 +17,8 @@
 
 #[cfg(test)]
 extern crate std;
+
+pub struct FlashAccessError();
 
 pub trait FlashTrait {
 	/// The flash size in bytes. Must be a multiple of `PAGE_SIZE`.
@@ -31,17 +33,15 @@ pub trait FlashTrait {
 	/// Value of the first byte of each erased word. usually 0xFF
 	const ERASED_VALUE: u8;
 
-	type Error;
-
 	/// Erases the page starting at `address`. `address` must be a multiple of `PAGE_SIZE`
-	fn erase_page(&mut self, address: usize) -> Result<(), Self::Error>;
+	fn erase_page(&mut self, address: usize) -> Result<(), FlashAccessError>;
 
 	/// Writes `data` to `address`. `address` must be a multiple of `WORD_SIZE`.
 	/// If `data.len()` is not a multiple of `WORD_SIZE`, undefined padding is added.
-	fn write(&mut self, address: usize, data: &[u8]) -> Result<(), Self::Error>;
+	fn write(&mut self, address: usize, data: &[u8]) -> Result<(), FlashAccessError>;
 
 	/// Reads `data.len()` bytes from `address`. neither `address` nor `data.len()` need to be multiples of `WORD_SIZE`.
-	fn read(&mut self, address: usize, data: &mut [u8]) -> Result<(), Self::Error>;
+	fn read(&mut self, address: usize, data: &mut [u8]) -> Result<(), FlashAccessError>;
 }
 
 pub struct FlashStore<Flash: FlashTrait, const PAGE_SIZE: usize> {
@@ -54,6 +54,11 @@ pub enum FlashStoreError {
 	BufferTooSmall,
 	CorruptData,
 	NoSpaceLeft,
+	FlashAccessError,
+}
+
+impl From<FlashAccessError> for FlashStoreError {
+	fn from(_: FlashAccessError) -> FlashStoreError { FlashStoreError::FlashAccessError }
 }
 
 enum FindResult {
@@ -93,7 +98,7 @@ impl<Flash: FlashTrait, const PAGE_SIZE: usize> FlashStore<Flash, PAGE_SIZE> {
 
 	fn read_header(&mut self, position: usize) -> Result<(u8, usize), FlashStoreError> {
 		let mut header: [u8; 4] = [0,0,0,0];
-		self.flash.read(position, &mut header);
+		self.flash.read(position, &mut header)?;
 		Ok(Self::parse_header(header))
 	}
 
@@ -144,7 +149,7 @@ impl<Flash: FlashTrait, const PAGE_SIZE: usize> FlashStore<Flash, PAGE_SIZE> {
 
 		match self.find(Some(file_number))? {
 			FindResult::Found(position, size) => {
-				self.flash.read(position + HEADER_SIZE, &mut buffer[0..size]);
+				self.flash.read(position + HEADER_SIZE, &mut buffer[0..size])?;
 				return Ok(&buffer[0..size]);
 			}
 			FindResult::NotFound(_) => {
@@ -215,12 +220,12 @@ impl<Flash: FlashTrait, const PAGE_SIZE: usize> FlashStore<Flash, PAGE_SIZE> {
 		let file_index = self.generate_file_index()?;
 
 		for page in (0..Flash::SIZE).step_by(Flash::PAGE_SIZE) {
-			self.flash.read(page, &mut page_buffer);
-			self.flash.erase_page(page);
+			self.flash.read(page, &mut page_buffer)?;
+			self.flash.erase_page(page)?;
 
 			if remaining_bytes_to_copy > 0 {
 				let copy_from_this_page = remaining_bytes_to_copy.min(Flash::PAGE_SIZE);
-				self.flash.write(write_pointer, &page_buffer[0..copy_from_this_page]);
+				self.flash.write(write_pointer, &page_buffer[0..copy_from_this_page])?;
 				write_pointer += copy_from_this_page;
 				remaining_bytes_to_copy -= copy_from_this_page;
 			}
@@ -246,7 +251,7 @@ impl<Flash: FlashTrait, const PAGE_SIZE: usize> FlashStore<Flash, PAGE_SIZE> {
 					file_number == except_file_number;
 
 				if !discard_file_entry {
-					self.flash.write(write_pointer, &remaining_page[0..entry_size_on_this_page]);
+					self.flash.write(write_pointer, &remaining_page[0..entry_size_on_this_page])?;
 					write_pointer += entry_size_on_this_page;
 					remaining_bytes_to_copy = entry_size_on_next_page;
 				}
@@ -281,17 +286,17 @@ impl<Flash: FlashTrait, const PAGE_SIZE: usize> FlashStore<Flash, PAGE_SIZE> {
 			word_buffer[0..HEADER_SIZE].copy_from_slice(&header);
 			if Flash::WORD_SIZE < buffer.len() + HEADER_SIZE {
 				word_buffer[HEADER_SIZE..].copy_from_slice(&buffer[0..(Flash::WORD_SIZE-HEADER_SIZE)]);
-				self.flash.write(end_of_store, &word_buffer);
-				self.flash.write(end_of_store + Flash::WORD_SIZE, &buffer[(Flash::WORD_SIZE-HEADER_SIZE)..]);
+				self.flash.write(end_of_store, &word_buffer)?;
+				self.flash.write(end_of_store + Flash::WORD_SIZE, &buffer[(Flash::WORD_SIZE-HEADER_SIZE)..])?;
 			}
 			else {
 				word_buffer[HEADER_SIZE..(HEADER_SIZE + buffer.len())].copy_from_slice(buffer);
-				self.flash.write(end_of_store, &word_buffer);
+				self.flash.write(end_of_store, &word_buffer)?;
 			}
 		}
 		else {
-			self.flash.write(end_of_store, &header);
-			self.flash.write(end_of_store + header.len(), buffer);
+			self.flash.write(end_of_store, &header)?;
+			self.flash.write(end_of_store + header.len(), buffer)?;
 		}
 
 		Ok(())
@@ -303,6 +308,7 @@ mod tests {
 	use super::FlashTrait;
 	use super::FlashStore;
 	use super::FlashStoreError;
+	use super::FlashAccessError;
 
 	pub struct XorShift {
 		state: u64
@@ -358,20 +364,19 @@ mod tests {
 				const PAGE_SIZE: usize = $page_size;
 				const WORD_SIZE: usize = $word_size;
 				const ERASED_VALUE: u8 = $erased_value;
-				type Error = ();
 
-				fn erase_page(&mut self, page: usize) -> Result<(), ()> {
+				fn erase_page(&mut self, page: usize) -> Result<(), FlashAccessError> {
 					assert!(page % Self::PAGE_SIZE == 0);
 					self.erase_count[page / Self::PAGE_SIZE] += 1;
 					self.data[page..(page+Self::PAGE_SIZE)].copy_from_slice(&[Self::ERASED_VALUE; Self::PAGE_SIZE]);
 					Ok(())
 				}
 
-				fn read(&mut self, address:usize, data: &mut [u8]) -> Result<(), ()> {
+				fn read(&mut self, address:usize, data: &mut [u8]) -> Result<(), FlashAccessError> {
 					data.copy_from_slice(&self.data[address..(address+data.len())]);
 					Ok(())
 				}
-				fn write(&mut self, address: usize, data: &[u8]) -> Result<(), ()> {
+				fn write(&mut self, address: usize, data: &[u8]) -> Result<(), FlashAccessError> {
 					assert!(address % Self::WORD_SIZE == 0);
 					self.data[address..(address+data.len())].copy_from_slice(data);
 					Ok(())
