@@ -386,6 +386,74 @@ mod tests {
 		}
 	}
 
+	#[test]
+	fn gracefully_fails_for_corrupt_data() {
+		flash_impl!(MyFlash, 1024, 128, 4, 0xFF);
+		let mut flash = MyFlash::new();
+
+		flash.data[0] = 42; // file number 42
+		flash.data[1] = 253; // size 1021 (which, together with the header, exceeds the flash size)
+		flash.data[2] = 3;
+		flash.data[3] = 0;
+
+		let mut store = FlashStore::<_, 128>::new(&mut flash);
+		let mut buffer = [0; 2048];
+
+		assert!(store.read_file(42, &mut buffer) == Err(FlashStoreError::CorruptData));
+		assert!(store.read_file(1, &mut buffer) == Err(FlashStoreError::CorruptData));
+		assert!(store.write_file(42, &buffer[0..1]) == Err(FlashStoreError::CorruptData));
+		assert!(store.write_file(1, &buffer[0..1]) == Err(FlashStoreError::CorruptData));
+	}
+
+	#[test]
+	fn gracefully_fails_for_corrupt_data2() {
+		flash_impl!(MyFlash, 1024, 128, 4, 0xFF);
+		let mut flash = MyFlash::new();
+
+		flash.data[0] = 1; // file number 1
+		flash.data[1] = 4; // size 4
+		flash.data[2] = 0;
+		flash.data[3] = 0;
+
+		flash.data[8] = 42; // file number 42
+		flash.data[9] = 245; // size 1023 (which, together with the previous file and the header, exceeds the flash size)
+		flash.data[10] = 3;
+		flash.data[11] = 0;
+
+		let mut store = FlashStore::<_, 128>::new(&mut flash);
+		let mut buffer = [0; 2048];
+
+		assert!(store.read_file(42, &mut buffer) == Err(FlashStoreError::CorruptData));
+		assert!(store.read_file(1, &mut buffer) == Err(FlashStoreError::CorruptData));
+		assert!(store.read_file(2, &mut buffer) == Err(FlashStoreError::CorruptData));
+		assert!(store.write_file(42, &buffer[0..1]) == Err(FlashStoreError::CorruptData));
+		assert!(store.write_file(1, &buffer[0..1]) == Err(FlashStoreError::CorruptData));
+		assert!(store.write_file(2, &buffer[0..1]) == Err(FlashStoreError::CorruptData));
+	}
+
+	#[test]
+	fn overwrite_flash_filling_file() {
+		flash_impl!(MyFlash, 1024, 128, 4, 0xFF);
+		let mut flash = MyFlash::new();
+
+		flash.data[0] = 42; // file number 42
+		flash.data[1] = 252; // size 1020 (which, together with the header, is exactly the flash size)
+		flash.data[2] = 3;
+		flash.data[3] = 0;
+
+		let mut store = FlashStore::<_, 128>::new(&mut flash);
+		let mut buffer = [0; 2048];
+
+		assert!(store.read_file(42, &mut buffer).is_ok());
+
+		match store.write_file(11, &buffer[0..1]) {
+			Err(FlashStoreError::NoSpaceLeft) => {}
+			_ => {panic!()}
+		}
+
+		assert!(store.write_file(42, &buffer[0..1]).is_ok());
+		assert!(store.write_file(11, &buffer[0..1]).is_ok());
+	}
 
 	#[test]
 	fn stress_test_congestion_1() {
