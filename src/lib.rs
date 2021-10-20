@@ -50,7 +50,7 @@ pub struct FlashStore<Flash: FlashTrait, const PAGE_SIZE: usize> {
 	flash: Flash
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)] // GRCOV_EXCL_LINE
 pub enum FlashStoreError {
 	NotFound,
 	BufferTooSmall,
@@ -141,7 +141,7 @@ impl<Flash: FlashTrait, const PAGE_SIZE: usize> FlashStore<Flash, PAGE_SIZE> {
 			return Ok(position);
 		}
 		else {
-			unreachable!();
+			unreachable!(); // GRCOV_EXCL_LINE
 		}
 	}
 
@@ -505,7 +505,7 @@ mod tests {
 						assert!(f.is_none());
 					}
 					Err(_) => {
-						panic!();
+						panic!(); // GRCOV_EXCL_LINE
 					}
 				}
 			}
@@ -522,7 +522,7 @@ mod tests {
 			if let Some(error) = result.err() {
 				match error {
 					FlashStoreError::NoSpaceLeft => {}
-					_ => {panic!()}
+					_ => {panic!()} // GRCOV_EXCL_LINE
 				}
 			}
 
