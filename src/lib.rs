@@ -42,7 +42,7 @@ pub trait FlashTrait {
 	/// If `data.len()` is not a multiple of `WORD_SIZE`, undefined padding is added.
 	fn write(&mut self, address: usize, data: &[u8]) -> Result<(), FlashAccessError>;
 
-	/// Reads `data.len()` bytes from `address`. neither `address` nor `data.len()` need to be multiples of `WORD_SIZE`.
+	/// Reads `data.len()` bytes from `address`. neither `address` nor `data.len()` need to be multiples of `WORD_SIZE`. `address` is guaranteed to be a multiple of 4.
 	fn read(&mut self, address: usize, data: &mut [u8]) -> Result<(), FlashAccessError>;
 }
 
@@ -299,6 +299,13 @@ impl<Flash: FlashTrait, const PAGE_SIZE: usize> FlashStore<Flash, PAGE_SIZE> {
 			self.flash.write(end_of_store + header.len(), buffer)?;
 		}
 
+		Ok(())
+	}
+
+	pub fn initialize_flash(&mut self) -> Result<(), FlashStoreError> {
+		for page in (0..Flash::SIZE).step_by(Flash::PAGE_SIZE) {
+			self.flash.erase_page(page)?;
+		}
 		Ok(())
 	}
 }
@@ -559,6 +566,8 @@ mod tests {
 		let mut store = FlashStore::<_, 128>::new(&mut flash);
 		let mut buf = [0; 1024];
 
+		store.initialize_flash().unwrap();
+
 		let mut used = 0;
 		let granularity = <&mut MyFlash>::WORD_SIZE.max(4);
 
@@ -611,6 +620,6 @@ mod tests {
 			}
 		}
 
-		assert!(flash.erase_count() >= 4);
+		assert!(flash.erase_count() >= 5);
 	}
 }
