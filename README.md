@@ -13,7 +13,7 @@ and 254, that can contain any amount of data bytes, regardless of your flash pag
 Advantages:
   - Low overhead (only 4 bytes or your flash's word size, whichever is larger).
   - Perfect wear leveling: All pages have the same erase count at any time.
-  - Small code size.
+  - Small code size (adds 2kb compared to naive flash handling).
   - No limits on file size.
   - Easy to use.
   - Well-suited for small flash memories.
