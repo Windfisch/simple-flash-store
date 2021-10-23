@@ -151,8 +151,13 @@ impl<Flash: FlashTrait, const PAGE_SIZE: usize> FlashStore<Flash, PAGE_SIZE> {
 
 		match self.find(Some(file_number))? {
 			FindResult::Found(position, size) => {
-				self.flash.read(position + HEADER_SIZE, &mut buffer[0..size])?;
-				return Ok(&buffer[0..size]);
+				if buffer.len() < size {
+					return Err(FlashStoreError::BufferTooSmall);
+				}
+				else {
+					self.flash.read(position + HEADER_SIZE, &mut buffer[0..size])?;
+					return Ok(&buffer[0..size]);
+				}
 			}
 			FindResult::NotFound(_) => {
 				return Err(FlashStoreError::NotFound);
@@ -160,6 +165,7 @@ impl<Flash: FlashTrait, const PAGE_SIZE: usize> FlashStore<Flash, PAGE_SIZE> {
 		}
 	}
 
+	// consumes more than 1kb of stack storage
 	fn used_space_except(&mut self, file_number: u8) -> Result<usize, FlashStoreError> {
 		let mut sizes = [0; 255];
 
@@ -186,6 +192,7 @@ impl<Flash: FlashTrait, const PAGE_SIZE: usize> FlashStore<Flash, PAGE_SIZE> {
 		return Ok(sizes.iter().sum());
 	}
 
+	// consumes more than 1kb of stack storage
 	fn generate_file_index(&mut self) -> Result<[usize; 255], FlashStoreError> {
 		let mut positions = [usize::MAX; 255];
 
@@ -210,6 +217,7 @@ impl<Flash: FlashTrait, const PAGE_SIZE: usize> FlashStore<Flash, PAGE_SIZE> {
 		return Ok(positions);
 	}
 
+	// consumes more than 1024 + PAGE_SIZE bytes of stack storage
 	fn compact_flash_except(&mut self, except_file_number: u8) -> Result<usize, FlashStoreError> {
 		use core::convert::TryInto;
 		let mut page_buffer = [0u8; PAGE_SIZE];
@@ -263,6 +271,7 @@ impl<Flash: FlashTrait, const PAGE_SIZE: usize> FlashStore<Flash, PAGE_SIZE> {
 		Ok(write_pointer)
 	}
 
+	// consumes at least 1024 + PAGE_SIZE bytes of stack in the worst case.
 	pub fn write_file(&mut self, file_number: u8, buffer: &[u8]) -> Result<(), FlashStoreError> {
 		assert!(file_number != 0xFF, "Illegal file number 0xFF");
 		
