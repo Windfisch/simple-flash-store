@@ -165,7 +165,7 @@ impl<Flash: FlashTrait, const PAGE_SIZE: usize> FlashStore<Flash, PAGE_SIZE> {
 		}
 	}
 
-	// consumes more than 1kb of stack storage
+	/** consumes 1kb of stack space */
 	fn used_space_except(&mut self, file_number: u8) -> Result<usize, FlashStoreError> {
 		let mut sizes = [0; 255];
 
@@ -190,6 +190,11 @@ impl<Flash: FlashTrait, const PAGE_SIZE: usize> FlashStore<Flash, PAGE_SIZE> {
 		sizes[file_number as usize] = 0;
 
 		return Ok(sizes.iter().sum());
+	}
+
+	/** consumes 1kb of stack space */
+	pub fn used_space(&mut self) -> Result<usize, FlashStoreError> {
+		self.used_space_except(0xFF)
 	}
 
 	// consumes more than 1kb of stack storage
@@ -271,7 +276,7 @@ impl<Flash: FlashTrait, const PAGE_SIZE: usize> FlashStore<Flash, PAGE_SIZE> {
 		Ok(write_pointer)
 	}
 
-	// consumes at least 1024 + PAGE_SIZE bytes of stack in the worst case.
+	/** consumes at least 1024 + PAGE_SIZE bytes of stack in the worst case. */
 	pub fn write_file(&mut self, file_number: u8, buffer: &[u8]) -> Result<(), FlashStoreError> {
 		assert!(file_number != 0xFF, "Illegal file number 0xFF");
 		
