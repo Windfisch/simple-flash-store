@@ -166,7 +166,7 @@ impl<Flash: FlashTrait, const PAGE_SIZE: usize> FlashStore<Flash, PAGE_SIZE> {
 	}
 
 	/** consumes 1kb of stack space */
-	fn used_space_except(&mut self, file_number: u8) -> Result<usize, FlashStoreError> {
+	fn used_space_except(&mut self, file_number: Option<u8>) -> Result<usize, FlashStoreError> {
 		let mut sizes = [0; 255];
 
 		let mut position = 0;
@@ -187,14 +187,16 @@ impl<Flash: FlashTrait, const PAGE_SIZE: usize> FlashStore<Flash, PAGE_SIZE> {
 			position += Self::round(HEADER_SIZE + size);
 		}
 
-		sizes[file_number as usize] = 0;
+		if let Some(file_number) = file_number {
+			sizes[file_number as usize] = 0;
+		}
 
 		return Ok(sizes.iter().sum());
 	}
 
 	/** consumes 1kb of stack space */
 	pub fn used_space(&mut self) -> Result<usize, FlashStoreError> {
-		self.used_space_except(0xFF)
+		self.used_space_except(None)
 	}
 
 	// consumes more than 1kb of stack storage
@@ -283,7 +285,7 @@ impl<Flash: FlashTrait, const PAGE_SIZE: usize> FlashStore<Flash, PAGE_SIZE> {
 		let mut end_of_store = self.end_of_store()?;
 
 		if end_of_store + HEADER_SIZE + buffer.len() > Flash::SIZE {
-			if HEADER_SIZE + buffer.len() > Flash::SIZE - self.used_space_except(file_number)? {
+			if HEADER_SIZE + buffer.len() > Flash::SIZE - self.used_space_except(Some(file_number))? {
 				return Err(FlashStoreError::NoSpaceLeft);
 			}
 			end_of_store = self.compact_flash_except(file_number)?;
